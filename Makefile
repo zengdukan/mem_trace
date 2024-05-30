@@ -7,7 +7,7 @@ CPP=$(cross)g++
 AR=$(cross)ar
 
 #####设置编译参数######
-CFLAGS = -g -Wall -fPIC
+CFLAGS = -g -Wall -Wno-frame-address -fPIC -std=c11
 ifdef cross
 CFLAGS += 
 endif
@@ -58,7 +58,7 @@ test:test.cpp
 	$(CPP) -g test.cpp -o test
 
 run_test:
-	LD_PRELOAD=$(PROJECT_ROOT)/lib/$(LIB_SO) ./test
+	LD_PRELOAD=$(PROJECT_ROOT)/lib/$(LIB_SO) MEM_TRACER_START_ONSIG=10 MEM_TRACER_STOP_ONSIG=12 MEM_TRACER_UDP_PORT=12345 ./test
 
 clean:
 	$(RM) -f $(DEPFILE)
