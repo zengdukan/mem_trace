@@ -7,14 +7,11 @@
 #include <netinet/udp.h>
 #include <pthread.h>
 #include <signal.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h> /* See NOTES */
-
-#include "uthash.h"
 
 #define BT_SIZE 20
 
@@ -46,25 +43,12 @@ static libc_alloc_func_t libc_alloc_funcs[] = {{"calloc", (void *)__libc_calloc,
                                                {"realloc", (void *)__libc_realloc, (void **)(&libc_realloc)},
                                                {"free", (void *)__libc_free, (void **)(&libc_free)}};
 
-typedef struct bt_info_s
-{
-    uint64_t _mem_addr;
-    uint64_t _mem_size;
-    uint64_t _call_stack[BT_SIZE];
-} bt_info_t;
-
-typedef struct memory_info_s
-{
-    uint64_t _mem_addr;
-    bt_info_t _bt_info;
-    UT_hash_handle hh;
-} memory_info_t;
-
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 static int enable = 0;
+static int notify_udp_fd = 0;
 static int notify_udp_port = 0;
-static pthread_mutex_t memory_mutex = PTHREAD_MUTEX_INITIALIZER;
-static memory_info_t *g_mem_info = NULL;
+static struct sockaddr_in notify_udp_addr = {0};
+
 __thread int interval_switch = 1;
 
 static void set_enable(int value)
@@ -74,15 +58,7 @@ static void set_enable(int value)
 
 static void start_trace_signal_handler(int signo, siginfo_t *info, void *context)
 {
-    set_enable(1);
-}
-
-static void stop_trace_signal_handler(int signo, siginfo_t *info, void *context)
-{
     set_enable(0);
-
-    int notify_udp_fd = 0;
-    struct sockaddr_in notify_udp_addr = {0};
 
     if (notify_udp_fd > 0)
     {
@@ -97,23 +73,16 @@ static void stop_trace_signal_handler(int signo, siginfo_t *info, void *context)
     notify_udp_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (notify_udp_fd <= 0)
     {
-        perror("create memory tracer analyze udp fail: ");
+        perror("create memory tracer notify udp fail: ");
         return;
     }
 
-    // send
-    memory_info_t* iter = NULL;
-    for (iter = g_mem_info; iter != NULL; iter = (memory_info_t*)(iter->hh.next))
-    {
-        sendto(notify_udp_fd, (void*)&iter->_bt_info, sizeof(bt_info_t), 0, (const struct sockaddr *)&notify_udp_addr, sizeof(struct sockaddr));
-    }
+    set_enable(1);
+}
 
-    // free
-    memory_info_t* tmp;
-    HASH_ITER(hh, g_mem_info, tmp, iter) {
-        HASH_DEL(g_mem_info, tmp);
-        free(tmp);
-    }
+static void stop_trace_signal_handler(int signo, siginfo_t *info, void *context)
+{
+    set_enable(0);
 
     if (notify_udp_fd > 0)
     {
@@ -194,7 +163,14 @@ static void *convert_addr(void *addr)
     return (void *)((size_t)addr - link->l_addr);
 }
 
-static void bt(uint64_t call_stack[BT_SIZE])
+typedef struct bt_info_s
+{
+    uint64_t _mem_addr;
+    uint64_t _mem_size; // 0: free, > 0: alloc
+    uint64_t _call_stack[BT_SIZE];
+} bt_info_t;
+
+static void bt(bt_info_t *bt_info)
 {
     void *arr[BT_SIZE] = {0};
     int index = 0;
@@ -275,43 +251,15 @@ static void bt(uint64_t call_stack[BT_SIZE])
     {
         if (arr[i] != NULL)
             arr[i] = convert_addr(arr[i]);
-        call_stack[i] = (uint64_t)arr[i];
+        bt_info->_call_stack[i] = (uint64_t)arr[i];
     }
 }
 
-static void analyze(void *mem_addr, size_t size, uint64_t call_stack[BT_SIZE])
+static void notify(bt_info_t *bt_info, void *mem_addr, size_t size)
 {
-    pthread_mutex_lock(&memory_mutex);
-
-    if (size == 0) // free
-    {
-        memory_info_t *tmp = NULL;
-        uint64_t tmp_addr = (uint64_t)mem_addr;
-        HASH_FIND_INT(g_mem_info, &tmp_addr, tmp);
-        if (tmp != NULL)
-        {
-            HASH_DEL(g_mem_info, tmp);
-            free(tmp);
-        }
-    }
-    else
-    {
-        memory_info_t *tmp = NULL;
-        uint64_t _mem_addr = (uint64_t)mem_addr;
-        HASH_FIND_INT(g_mem_info, &_mem_addr, tmp);
-        if (tmp == NULL)
-        {
-            tmp = (memory_info_t *)calloc(1, sizeof(memory_info_t));
-            tmp->_mem_addr = _mem_addr;
-            HASH_ADD_INT(g_mem_info, _mem_addr, tmp);
-        }
-
-        tmp->_bt_info._mem_addr = _mem_addr;
-        tmp->_bt_info._mem_size = size;
-        memcpy(tmp->_bt_info._call_stack, call_stack, sizeof(tmp->_bt_info._call_stack));
-    }
-
-    pthread_mutex_unlock(&memory_mutex);
+    bt_info->_mem_addr = (uint64_t)mem_addr;
+    bt_info->_mem_size = size;
+    sendto(notify_udp_fd, (void *)&bt_info, sizeof(bt_info_t), 0, (const struct sockaddr *)&notify_udp_addr, sizeof(struct sockaddr));
 }
 
 /** -- libc memory operators -- **/
@@ -334,9 +282,9 @@ void *malloc(size_t size)
     void *p = libc_malloc(size);
     if (p != NULL)
     {
-        uint64_t call_stack[BT_SIZE] = {0};
-        bt(call_stack);
-        analyze(p, size, call_stack);
+        bt_info_t bt_info = {0};
+        bt(&bt_info);
+        notify(&bt_info, p, size);
     }
 
     open_interval_switch();
@@ -358,7 +306,8 @@ void free(void *ptr)
     libc_free(ptr);
     if (ptr != NULL)
     {
-        analyze(ptr, 0, NULL);
+        bt_info_t bt_info = {0};
+        notify(&bt_info, ptr, 0);
     }
 
     open_interval_switch();
@@ -378,12 +327,13 @@ void *realloc(void *ptr, size_t size)
     {
         if (ptr != NULL)
         {
-            analyze(ptr, 0, NULL);
+            bt_info_t bt_info = {0};
+            notify(&bt_info, ptr, 0);
         }
 
-        uint64_t call_stack[BT_SIZE] = {0};
-        bt(call_stack);
-        analyze(p, size, call_stack);
+        bt_info_t bt_info = {0};
+        bt(&bt_info);
+        notify(&bt_info, p, size);
     }
 
     open_interval_switch();
@@ -402,9 +352,9 @@ void *calloc(size_t nmemb, size_t size)
     void *p = libc_calloc(nmemb, size);
     if (p != NULL)
     {
-        uint64_t call_stack[BT_SIZE] = {0};
-        bt(call_stack);
-        analyze(p, nmemb * size, call_stack);
+        bt_info_t bt_info = {0};
+        bt(&bt_info);
+        notify(&bt_info, p, nmemb * size);
     }
 
     open_interval_switch();

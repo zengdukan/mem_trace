@@ -33,3 +33,5 @@
 main
 test
 deps
+hashmap_test
+test_cpu

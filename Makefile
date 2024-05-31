@@ -73,4 +73,4 @@ clean:
 	$(RM) -f $(DEPFILE)
 	$(RM) -f $(OBJECT_DIR)/*
 	$(RM) -rf $(LIB_DIR)/*
-	$(RM) -f test
+	$(RM) -f test test_cpu hashmap_test
