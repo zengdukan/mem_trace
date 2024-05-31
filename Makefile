@@ -55,10 +55,13 @@ libs:$(OBJECT_FILE)
 	$(CC) -fPIC -shared -o $(LIB_DIR)/$(LIB_SO) $(OBJECT_FILE)
 
 test:test.cpp
-	$(CPP) -g test.cpp -o test
+	$(CPP) -std=c11 -g test.cpp -o test -lpthread
 
 test_cpu:test_cpu.cpp
 	$(CPP) -g test_cpu.cpp -o test_cpu
+
+hashmap_test:hashmap_test.c
+	$(CC) -g -Wall hashmap_test.c -o hashmap_test
 
 run_test:
 	LD_PRELOAD=$(PROJECT_ROOT)/lib/$(LIB_SO) MEM_TRACER_START_ONSIG=10 MEM_TRACER_STOP_ONSIG=12 MEM_ENABLE=1 MEM_TRACER_UDP_PORT=12345 ./test
