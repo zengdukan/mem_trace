@@ -16,7 +16,8 @@ void func_free()
 int main(int argc, char *argv[])
 {
     getchar();
-
+    printf("start test...\n");
+    
     struct timeval tv1, tv2;
     int64_t ts1, ts2;
     const int count = 1000000;

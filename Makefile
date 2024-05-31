@@ -55,7 +55,7 @@ libs:$(OBJECT_FILE)
 	$(CC) -fPIC -shared -o $(LIB_DIR)/$(LIB_SO) $(OBJECT_FILE)
 
 test:test.cpp
-	$(CPP) -std=c11 -g test.cpp -o test -lpthread
+	$(CPP) -g test.cpp -o test -lpthread
 
 test_cpu:test_cpu.cpp
 	$(CPP) -g test_cpu.cpp -o test_cpu
