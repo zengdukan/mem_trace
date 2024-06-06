@@ -165,9 +165,9 @@ static void *convert_addr(void *addr)
 
 typedef struct bt_info_s
 {
-    uint64_t _mem_addr;
-    uint64_t _mem_size; // 0: free, > 0: alloc
-    uint64_t _call_stack[BT_SIZE];
+    uint64_t mem_addr;
+    uint64_t mem_size; // 0: free, > 0: alloc
+    uint64_t call_stack[BT_SIZE];
 } bt_info_t;
 
 static void bt(bt_info_t *bt_info)
@@ -251,15 +251,15 @@ static void bt(bt_info_t *bt_info)
     {
         if (arr[i] != NULL)
             arr[i] = convert_addr(arr[i]);
-        bt_info->_call_stack[i] = (uint64_t)arr[i];
+        bt_info->call_stack[i] = (uint64_t)arr[i];
     }
 }
 
 static void notify(bt_info_t *bt_info, void *mem_addr, size_t size)
 {
-    bt_info->_mem_addr = (uint64_t)mem_addr;
-    bt_info->_mem_size = size;
-    sendto(notify_udp_fd, (void *)&bt_info, sizeof(bt_info_t), 0, (const struct sockaddr *)&notify_udp_addr, sizeof(struct sockaddr));
+    bt_info->mem_addr = (uint64_t)mem_addr;
+    bt_info->mem_size = size;
+    sendto(notify_udp_fd, (void *)bt_info, sizeof(bt_info_t), 0, (const struct sockaddr *)&notify_udp_addr, sizeof(struct sockaddr));
 }
 
 /** -- libc memory operators -- **/
