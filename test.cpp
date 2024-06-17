@@ -32,11 +32,27 @@ void func_unique_ptr()
     std::unique_ptr<int> p = std::make_unique<int>();
 }
 
+struct FreeSharePtr
+{
+    std::shared_ptr<FreeSharePtr> other;
+};
+
+void func_leak_share_ptr()
+{
+    std::shared_ptr<FreeSharePtr> a = std::make_shared<FreeSharePtr>();
+    std::shared_ptr<FreeSharePtr> b = std::make_shared<FreeSharePtr>();
+
+    a->other = b;
+    b->other = a;
+}
+
 void func2(int argc)
 {
     func_free(argc);
     func_no_free();
-    // func_new();
+    func_new();
+    func_unique_ptr();
+    func_leak_share_ptr();
 }
 
 void func1(int argc)
