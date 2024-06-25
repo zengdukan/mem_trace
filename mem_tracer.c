@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h> /* See NOTES */
+#include <execinfo.h>
 
 #define BT_SIZE 20
 
@@ -175,7 +176,7 @@ static void bt(bt_info_t *bt_info)
     void *arr[BT_SIZE] = {0};
     int index = 0;
     void *frame = NULL;
-
+#if 0
     // NOTE: we can't use "for" loop, __builtin_* functions
     // require the number to be known at compile time
     do
@@ -241,7 +242,11 @@ static void bt(bt_info_t *bt_info)
         if (index == BT_SIZE || frame == NULL)
             break;
     } while (0);
-
+#else
+    void* arrtmp[BT_SIZE+1];
+    index = backtrace(arrtmp, BT_SIZE + 1) - 1;
+	memcpy(arr, &arrtmp[1], index*sizeof(void*));
+#endif
     // fill remaining spaces
     for (; index < BT_SIZE; index++)
         arr[index] = NULL;
